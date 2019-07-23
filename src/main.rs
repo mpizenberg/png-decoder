@@ -1,9 +1,11 @@
 use lazy_static::lazy_static;
 use nom::bytes::complete::{tag, take};
+use nom::combinator::map_res;
 use nom::multi::many1;
-use nom::number::complete::be_u32;
+use nom::number::complete::{be_u32, be_u8};
 use nom::IResult;
 use std::collections::HashSet;
+use std::convert::TryFrom;
 use std::{env, error::Error, fs};
 
 fn main() {
@@ -18,7 +20,13 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
     match parse_png(&data) {
         Ok((_, png)) => {
             let png_valid = validate_chunk_constraints(&png)?;
-            png_valid.iter().for_each(|chunk| println!("{}", chunk));
+            // TODO decode IHDR data
+            let (ihdr, chunks) = png_valid.split_first().ok_or("Hum weird ...")?;
+            match parse_ihdr_data(&ihdr.data) {
+                Ok((_, ihdr_data)) => println!("{:?}", ihdr_data),
+                Err(e) => eprintln!("{:?}", e),
+            };
+            chunks.iter().for_each(|chunk| println!("{}", chunk));
         }
         Err(e) => {
             eprintln!("{:?}", e);
@@ -370,6 +378,31 @@ fn validate_chunk(acc: ValidationSets, chunk: &Chunk) -> Result<ValidationSets, 
     }
 }
 
+// 23 juillet ---------------------------------------------------------------------
+
+fn parse_ihdr_data(input: &[u8]) -> IResult<&[u8], IHDRData> {
+    let (input, width) = be_u32(input)?;
+    let (input, height) = be_u32(input)?;
+    let (input, bit_depth) = be_u8(input)?;
+    let (input, color_type) = map_res(be_u8, ColorType::try_from)(input)?;
+    let (input, compression_method) = be_u8(input)?;
+    let (input, filter_method) = be_u8(input)?;
+    let (input, interlace_method) = be_u8(input)?;
+    Ok((
+        input,
+        IHDRData {
+            width,
+            height,
+            bit_depth,
+            color_type,
+            compression_method,
+            filter_method,
+            interlace_method,
+        },
+    ))
+}
+
+#[derive(Debug)]
 struct IHDRData {
     width: u32,
     height: u32,
@@ -380,10 +413,25 @@ struct IHDRData {
     interlace_method: u8,
 }
 
+#[derive(Debug)]
 enum ColorType {
     Gray,
     RGB,
     PLTE,
     GrayAlpha,
     RGBA,
+}
+
+impl TryFrom<u8> for ColorType {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ColorType::Gray),
+            2 => Ok(ColorType::RGB),
+            3 => Ok(ColorType::PLTE),
+            4 => Ok(ColorType::GrayAlpha),
+            6 => Ok(ColorType::RGBA),
+            _ => Err(format!("Color type {} is not valid", value)),
+        }
+    }
 }
