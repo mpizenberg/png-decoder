@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 use nom::bytes::complete::{tag, take};
-use nom::combinator::map_res;
+use nom::combinator::{map, map_res};
 use nom::multi::many1;
 use nom::number::complete::{be_u32, be_u8};
 use nom::IResult;
@@ -20,13 +20,13 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
     match parse_png(&data) {
         Ok((_, png)) => {
             let png_valid = validate_chunk_constraints(&png)?;
-            // TODO decode IHDR data
-            let (ihdr, chunks) = png_valid.split_first().ok_or("Hum weird ...")?;
-            match parse_ihdr_data(&ihdr.data) {
-                Ok((_, ihdr_data)) => println!("{:?}", ihdr_data),
-                Err(e) => eprintln!("{:?}", e),
-            };
-            chunks.iter().for_each(|chunk| println!("{}", chunk));
+            png_valid.iter().for_each(|chunk| {
+                match parse_chunk_data(chunk) {
+                    Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
+                    Ok((_, chunk_data)) => println!("{:?}", chunk_data),
+                    Err(e) => eprintln!("{:?}", e),
+                };
+            });
         }
         Err(e) => {
             eprintln!("{:?}", e);
@@ -378,7 +378,7 @@ fn validate_chunk(acc: ValidationSets, chunk: &Chunk) -> Result<ValidationSets, 
     }
 }
 
-// 23 juillet ---------------------------------------------------------------------
+// 23 juillet ----------- journée pastaciutta + pot = LOL -------------------------
 
 fn parse_ihdr_data(input: &[u8]) -> IResult<&[u8], IHDRData> {
     let (input, width) = be_u32(input)?;
@@ -433,5 +433,94 @@ impl TryFrom<u8> for ColorType {
             6 => Ok(ColorType::RGBA),
             _ => Err(format!("Color type {} is not valid", value)),
         }
+    }
+}
+
+// 24 juillet ---------------------------------------------------------------------
+
+// TODO
+// parse_phys_data
+// parse_text_data
+// parse_ztxt_data
+// parse_bkgd_data
+// parse_time_data
+
+fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits> {
+    match length {
+        1 => map(be_u8, |sb| SignificantBits::Gray(sb))(input),
+        2 => map(take(2u8), |sb: &[u8]| {
+            SignificantBits::GrayAlpha([sb[0], sb[1]])
+        })(input),
+        3 => map(take(3u8), |sb: &[u8]| {
+            SignificantBits::RGB([sb[0], sb[1], sb[2]])
+        })(input),
+        4 => map(take(4u8), |sb: &[u8]| {
+            SignificantBits::RGBA([sb[0], sb[1], sb[2], sb[3]])
+        })(input),
+        _ => map_res(take(0u8), |_| {
+            Err("There must be 1 to 4 bytes in the sBIT data chunk")
+        })(input),
+    }
+}
+
+#[derive(Debug)]
+enum SignificantBits {
+    Gray(u8),
+    GrayAlpha([u8; 2]),
+    RGB([u8; 3]),
+    RGBA([u8; 4]),
+}
+
+#[allow(non_camel_case_types)]
+#[derive(Debug)]
+enum ChunkData<'a> {
+    // Critical chunks
+    IHDR(IHDRData), // image header
+    // PLTE, // palette
+    // IDAT, // image data
+    // IEND, // image trailer
+    // Ancillary chunks
+    // tRNS, // transparency
+    // gAMA, // image gamma
+    // cHRM, // primary chromaticities
+    // sRGB, // standard RGB color space
+    // iCCP, // embedded ICC profile
+    // tEXt, // textual data
+    // zTXt, // compressed textual data
+    // iTXt, // international textual data
+    // bKGD, // background color
+    // pHYs, // physical pixel dimensions
+    sBIT(SignificantBits), // significant bits
+    // sPLT, // suggested palette
+    // hIST, // palette histogram
+    // tIME, // image last-modification time
+    // Unknown
+    Unknown(&'a [u8]),
+}
+
+// TODO
+fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
+    match chunk.chunk_type {
+        // --- Critical chunks ---
+        ChunkType::IHDR => map(parse_ihdr_data, ChunkData::IHDR)(&chunk.data),
+        ChunkType::PLTE => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::IDAT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::IEND => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        // --- Ancillary chunks ---
+        ChunkType::cHRM => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::gAMA => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::iCCP => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::sBIT => map(|d| parse_sbit_data(d, chunk.length), ChunkData::sBIT)(&chunk.data),
+        ChunkType::sRGB => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::bKGD => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::hIST => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::tRNS => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::pHYs => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::sPLT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::tIME => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::iTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::tEXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::zTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::Unknown(_) => map(take(0u8), ChunkData::Unknown)(&chunk.data),
     }
 }
