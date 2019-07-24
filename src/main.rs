@@ -439,7 +439,6 @@ impl TryFrom<u8> for ColorType {
 // 24 juillet ---------------------------------------------------------------------
 
 // TODO
-// parse_time_data
 // parse_ztxt_data
 
 fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits> {
@@ -502,6 +501,26 @@ fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
     take_till(|c| c == 0)(input)
 }
 
+fn parse_time_data(input: &[u8]) -> IResult<&[u8], LastModificationTime> {
+    let (input, year) = be_u16(input)?;
+    let (input, month) = be_u8(input)?;
+    let (input, day) = be_u8(input)?;
+    let (input, hour) = be_u8(input)?;
+    let (input, minute) = be_u8(input)?;
+    let (input, second) = be_u8(input)?;
+    Ok((
+        input,
+        LastModificationTime {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        },
+    ))
+}
+
 #[derive(Debug)]
 enum SignificantBits {
     Gray(u8),
@@ -536,6 +555,16 @@ enum Background {
     RGB([u16; 3]),
 }
 
+#[derive(Debug)]
+struct LastModificationTime {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 enum ChunkData<'a> {
@@ -558,7 +587,7 @@ enum ChunkData<'a> {
     sBIT(SignificantBits),        // significant bits
     // sPLT, // suggested palette
     // hIST, // palette histogram
-    // tIME, // image last-modification time
+    tIME(LastModificationTime), // image last-modification time
     // Unknown
     Unknown(&'a [u8]),
 }
@@ -582,7 +611,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::tRNS => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::pHYs => map(parse_phys_data, ChunkData::pHYs)(&chunk.data),
         ChunkType::sPLT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::tIME => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::tIME => map(parse_time_data, ChunkData::tIME)(&chunk.data),
         ChunkType::iTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tEXt => map(parse_text_data, ChunkData::tEXt)(&chunk.data),
         ChunkType::zTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
