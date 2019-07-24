@@ -493,6 +493,22 @@ fn parse_text_data(input: &[u8]) -> IResult<&[u8], Text> {
     Ok((input, Text { keyword, text }))
 }
 
+// TODO decompress with deflate/inflate
+fn parse_ztxt_data(input: &[u8]) -> IResult<&[u8], CompressedText> {
+    let (input, keyword) = map(str_till_null, String::from)(input)?;
+    let (input, _) = take(1_u8)(input)?;
+    let (input, method) = be_u8(input)?;
+    let text = input.len();
+    Ok((
+        input,
+        CompressedText {
+            keyword,
+            method,
+            text,
+        },
+    ))
+}
+
 fn str_till_null(input: &[u8]) -> IResult<&[u8], &str> {
     map_res(till_null, std::str::from_utf8)(input)
 }
@@ -549,6 +565,13 @@ struct Text {
 }
 
 #[derive(Debug)]
+struct CompressedText {
+    keyword: String,
+    method: u8,
+    text: usize,
+}
+
+#[derive(Debug)]
 enum Background {
     Palette(u8),
     Gray(u16),
@@ -579,8 +602,8 @@ enum ChunkData<'a> {
     // cHRM, // primary chromaticities
     // sRGB, // standard RGB color space
     // iCCP, // embedded ICC profile
-    tEXt(Text), // textual data
-    // zTXt, // compressed textual data
+    tEXt(Text),           // textual data
+    zTXt(CompressedText), // compressed textual data
     // iTXt, // international textual data
     bKGD(Background),             // background color
     pHYs(PhysicalPixelDimension), // physical pixel dimensions
@@ -614,7 +637,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::tIME => map(parse_time_data, ChunkData::tIME)(&chunk.data),
         ChunkType::iTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tEXt => map(parse_text_data, ChunkData::tEXt)(&chunk.data),
-        ChunkType::zTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::zTXt => map(parse_ztxt_data, ChunkData::zTXt)(&chunk.data),
         ChunkType::Unknown(_) => map(take(0u8), ChunkData::Unknown)(&chunk.data),
     }
 }
