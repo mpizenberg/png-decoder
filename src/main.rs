@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use nom::bytes::complete::{tag, take, take_till};
 use nom::combinator::{map, map_res};
 use nom::multi::many1;
-use nom::number::complete::{be_u32, be_u8};
+use nom::number::complete::{be_u16, be_u32, be_u8};
 use nom::IResult;
 use std::collections::HashSet;
 use std::convert::TryFrom;
@@ -439,15 +439,12 @@ impl TryFrom<u8> for ColorType {
 // 24 juillet ---------------------------------------------------------------------
 
 // TODO
-// parse_phys_data
-// parse_text_data
-// parse_ztxt_data
-// parse_bkgd_data
 // parse_time_data
+// parse_ztxt_data
 
 fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits> {
     match length {
-        1 => map(be_u8, |sb| SignificantBits::Gray(sb))(input),
+        1 => map(be_u8, SignificantBits::Gray)(input),
         2 => map(take(2u8), |sb: &[u8]| {
             SignificantBits::GrayAlpha([sb[0], sb[1]])
         })(input),
@@ -459,6 +456,22 @@ fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits>
         })(input),
         _ => map_res(take(0u8), |_| {
             Err("There must be 1 to 4 bytes in the sBIT data chunk")
+        })(input),
+    }
+}
+
+fn parse_bkgd_data(input: &[u8], length: u32) -> IResult<&[u8], Background> {
+    match length {
+        1 => map(be_u8, Background::Palette)(input),
+        2 => map(be_u16, Background::Gray)(input),
+        6 => {
+            let (input, red) = be_u16(input)?;
+            let (input, green) = be_u16(input)?;
+            let (input, blue) = be_u16(input)?;
+            Ok((input, Background::RGB([red, green, blue])))
+        }
+        _ => map_res(take(0u8), |_| {
+            Err("There must be 1, 2 or 6 bytes in the bKGD data chunk")
         })(input),
     }
 }
@@ -516,6 +529,13 @@ struct Text {
     text: String,
 }
 
+#[derive(Debug)]
+enum Background {
+    Palette(u8),
+    Gray(u16),
+    RGB([u16; 3]),
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 enum ChunkData<'a> {
@@ -533,7 +553,7 @@ enum ChunkData<'a> {
     tEXt(Text), // textual data
     // zTXt, // compressed textual data
     // iTXt, // international textual data
-    // bKGD, // background color
+    bKGD(Background),             // background color
     pHYs(PhysicalPixelDimension), // physical pixel dimensions
     sBIT(SignificantBits),        // significant bits
     // sPLT, // suggested palette
@@ -557,7 +577,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::iCCP => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::sBIT => map(|d| parse_sbit_data(d, chunk.length), ChunkData::sBIT)(&chunk.data),
         ChunkType::sRGB => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::bKGD => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::bKGD => map(|d| parse_bkgd_data(d, chunk.length), ChunkData::bKGD)(&chunk.data),
         ChunkType::hIST => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tRNS => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::pHYs => map(parse_phys_data, ChunkData::pHYs)(&chunk.data),
