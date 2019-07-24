@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use nom::bytes::complete::{tag, take};
+use nom::bytes::complete::{tag, take, take_till};
 use nom::combinator::{map, map_res};
 use nom::multi::many1;
 use nom::number::complete::{be_u32, be_u8};
@@ -466,14 +466,27 @@ fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits>
 fn parse_phys_data(input: &[u8]) -> IResult<&[u8], PhysicalPixelDimension> {
     let (input, x) = be_u32(input)?;
     let (input, y) = be_u32(input)?;
-    let (input, unit) = map_res(be_u8, |n| {
-        match n {
-            0 => Ok(DimensionUnit::Unknown),
-            1 => Ok(DimensionUnit::Meter),
-            _ => Err("pHYs unit specifier can only be 0 or 1"),
-        }
+    let (input, unit) = map_res(be_u8, |n| match n {
+        0 => Ok(DimensionUnit::Unknown),
+        1 => Ok(DimensionUnit::Meter),
+        _ => Err("pHYs unit specifier can only be 0 or 1"),
     })(input)?;
-    Ok((input, PhysicalPixelDimension {x, y, unit}))
+    Ok((input, PhysicalPixelDimension { x, y, unit }))
+}
+
+fn parse_text_data(input: &[u8]) -> IResult<&[u8], Text> {
+    let (input, keyword) = map(str_till_null, String::from)(input)?;
+    let (input, _) = take(1_u8)(input)?;
+    let (input, text) = map(str_till_null, String::from)(input)?;
+    Ok((input, Text { keyword, text }))
+}
+
+fn str_till_null(input: &[u8]) -> IResult<&[u8], &str> {
+    map_res(till_null, std::str::from_utf8)(input)
+}
+
+fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    take_till(|c| c == 0)(input)
 }
 
 #[derive(Debug)]
@@ -497,6 +510,12 @@ enum DimensionUnit {
     Meter,
 }
 
+#[derive(Debug)]
+struct Text {
+    keyword: String,
+    text: String,
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 enum ChunkData<'a> {
@@ -511,12 +530,12 @@ enum ChunkData<'a> {
     // cHRM, // primary chromaticities
     // sRGB, // standard RGB color space
     // iCCP, // embedded ICC profile
-    // tEXt, // textual data
+    tEXt(Text), // textual data
     // zTXt, // compressed textual data
     // iTXt, // international textual data
     // bKGD, // background color
     pHYs(PhysicalPixelDimension), // physical pixel dimensions
-    sBIT(SignificantBits), // significant bits
+    sBIT(SignificantBits),        // significant bits
     // sPLT, // suggested palette
     // hIST, // palette histogram
     // tIME, // image last-modification time
@@ -545,7 +564,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::sPLT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tIME => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::iTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::tEXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::tEXt => map(parse_text_data, ChunkData::tEXt)(&chunk.data),
         ChunkType::zTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::Unknown(_) => map(take(0u8), ChunkData::Unknown)(&chunk.data),
     }
