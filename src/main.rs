@@ -523,7 +523,7 @@ enum ChunkData<'a> {
     IHDR(IHDRData), // image header
     // PLTE, // palette
     // IDAT, // image data
-    // IEND, // image trailer
+    IEND, // image trailer
     // Ancillary chunks
     // tRNS, // transparency
     // gAMA, // image gamma
@@ -550,7 +550,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::IHDR => map(parse_ihdr_data, ChunkData::IHDR)(&chunk.data),
         ChunkType::PLTE => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::IDAT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::IEND => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::IEND => map(take(0u8), |_| ChunkData::IEND)(&chunk.data),
         // --- Ancillary chunks ---
         ChunkType::cHRM => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::gAMA => map(take(0u8), ChunkData::Unknown)(&chunk.data),
