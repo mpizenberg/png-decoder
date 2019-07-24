@@ -463,12 +463,38 @@ fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits>
     }
 }
 
+fn parse_phys_data(input: &[u8]) -> IResult<&[u8], PhysicalPixelDimension> {
+    let (input, x) = be_u32(input)?;
+    let (input, y) = be_u32(input)?;
+    let (input, unit) = map_res(be_u8, |n| {
+        match n {
+            0 => Ok(DimensionUnit::Unknown),
+            1 => Ok(DimensionUnit::Meter),
+            _ => Err("pHYs unit specifier can only be 0 or 1"),
+        }
+    })(input)?;
+    Ok((input, PhysicalPixelDimension {x, y, unit}))
+}
+
 #[derive(Debug)]
 enum SignificantBits {
     Gray(u8),
     GrayAlpha([u8; 2]),
     RGB([u8; 3]),
     RGBA([u8; 4]),
+}
+
+#[derive(Debug)]
+struct PhysicalPixelDimension {
+    x: u32,
+    y: u32,
+    unit: DimensionUnit,
+}
+
+#[derive(Debug)]
+enum DimensionUnit {
+    Unknown,
+    Meter,
 }
 
 #[allow(non_camel_case_types)]
@@ -489,7 +515,7 @@ enum ChunkData<'a> {
     // zTXt, // compressed textual data
     // iTXt, // international textual data
     // bKGD, // background color
-    // pHYs, // physical pixel dimensions
+    pHYs(PhysicalPixelDimension), // physical pixel dimensions
     sBIT(SignificantBits), // significant bits
     // sPLT, // suggested palette
     // hIST, // palette histogram
@@ -515,7 +541,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         ChunkType::bKGD => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::hIST => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tRNS => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::pHYs => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::pHYs => map(parse_phys_data, ChunkData::pHYs)(&chunk.data),
         ChunkType::sPLT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::tIME => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::iTXt => map(take(0u8), ChunkData::Unknown)(&chunk.data),
