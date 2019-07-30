@@ -45,14 +45,14 @@ const SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
 // const EXTENDED_SIGNATURE: [u8; 12] = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13];
 
-struct Chunk {
+struct Chunk<'a> {
     length: u32,
     chunk_type: ChunkType,
-    data: Vec<u8>,
+    data: &'a [u8],
     crc: [u8; 4],
 }
 
-impl std::fmt::Display for Chunk {
+impl std::fmt::Display for Chunk<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -62,7 +62,7 @@ impl std::fmt::Display for Chunk {
     }
 }
 
-impl std::fmt::Debug for Chunk {
+impl std::fmt::Debug for Chunk<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
@@ -73,8 +73,7 @@ fn parse_chunk(input: &[u8]) -> IResult<&[u8], Chunk> {
     let (input, t) = take(4usize)(input)?;
     let type_ = [t[0] as char, t[1] as char, t[2] as char, t[3] as char];
     let chunk_type = ChunkType::from(type_);
-    let (input, data_) = take(length)(input)?;
-    let data = data_.to_owned();
+    let (input, data) = take(length)(input)?;
     let (input, crc_) = take(4usize)(input)?;
     let crc = [crc_[0], crc_[1], crc_[2], crc_[3]];
     Ok((
@@ -148,7 +147,7 @@ impl From<[char; 4]> for ChunkType {
     }
 }
 
-fn validate_chunk_constraints(chunks: &[Chunk]) -> Result<&[Chunk], String> {
+fn validate_chunk_constraints<'a, 'c>(chunks: &'a [Chunk<'c>]) -> Result<&'a [Chunk<'c>], String> {
     // let inner_chunks = ihdr_first(chunks).and_then(iend_last)?;
     // let authorized_set = START_CHUNKS.clone();
     let mut authorized_set = HashSet::new();
@@ -522,7 +521,7 @@ fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
 }
 
 // TODO
-fn parse_idat_data(input: &[u8]) -> IResult<&[u8], IdatData> {
+fn parse_idat_data(input: &[u8]) -> IResult<&[u8], IDATData> {
     let flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     let mut decomp = inflate::core::DecompressorOxide::new();
     decomp.init();
@@ -546,7 +545,7 @@ fn parse_idat_data(input: &[u8]) -> IResult<&[u8], IdatData> {
                 ret.truncate(out_pos);
                 return Ok((
                     &[],
-                    IdatData {
+                    IDATData {
                         length: input.len(),
                         data: ret,
                     },
@@ -618,7 +617,7 @@ struct CompressedText {
 }
 
 #[derive(Debug)]
-struct IdatData {
+struct IDATData {
     length: usize,
     data: Vec<u8>,
 }
@@ -646,7 +645,7 @@ enum ChunkData<'a> {
     // Critical chunks
     IHDR(IHDRData), // image header
     // PLTE, // palette
-    IDAT(IdatData), // image data
+    IDAT(IDATData), // image data
     IEND, // image trailer
     // Ancillary chunks
     // tRNS, // transparency
@@ -668,7 +667,7 @@ enum ChunkData<'a> {
 }
 
 // TODO
-fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
+fn parse_chunk_data<'a>(chunk: &'a Chunk<'a>) -> IResult<&'a [u8], ChunkData<'a>> {
     match chunk.chunk_type {
         // --- Critical chunks ---
         ChunkType::IHDR => map(parse_ihdr_data, ChunkData::IHDR)(&chunk.data),
