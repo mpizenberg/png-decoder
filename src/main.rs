@@ -1,3 +1,6 @@
+use inflate::core::inflate_flags::{
+    TINFL_FLAG_PARSE_ZLIB_HEADER, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+};
 use lazy_static::lazy_static;
 use miniz_oxide::inflate;
 use nom::bytes::complete::{tag, take, take_till};
@@ -7,6 +10,7 @@ use nom::number::complete::{be_u16, be_u32, be_u8};
 use nom::IResult;
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::io::Cursor;
 use std::{env, error::Error, fs};
 
 fn main() {
@@ -439,9 +443,6 @@ impl TryFrom<u8> for ColorType {
 
 // 24 juillet ---------------------------------------------------------------------
 
-// TODO
-// parse_ztxt_data
-
 fn parse_sbit_data(input: &[u8], length: u32) -> IResult<&[u8], SignificantBits> {
     match length {
         1 => map(be_u8, SignificantBits::Gray)(input),
@@ -494,12 +495,14 @@ fn parse_text_data(input: &[u8]) -> IResult<&[u8], Text> {
     Ok((input, Text { keyword, text }))
 }
 
-// TODO decompress with deflate/inflate
 fn parse_ztxt_data(input: &[u8]) -> IResult<&[u8], CompressedText> {
     let (input, keyword) = map(str_till_null, String::from)(input)?;
     let (input, _) = take(1_u8)(input)?;
     let (input, method) = be_u8(input)?;
-    let (input, text) = map_res(map_res(rest, miniz_oxide::inflate::decompress_to_vec_zlib), String::from_utf8)(input)?;
+    let (input, text) = map_res(
+        map_res(rest, miniz_oxide::inflate::decompress_to_vec_zlib),
+        String::from_utf8,
+    )(input)?;
     Ok((
         input,
         CompressedText {
@@ -516,6 +519,48 @@ fn str_till_null(input: &[u8]) -> IResult<&[u8], &str> {
 
 fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
     take_till(|c| c == 0)(input)
+}
+
+// TODO
+fn parse_idat_data(input: &[u8]) -> IResult<&[u8], IdatData> {
+    let flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+    let mut decomp = inflate::core::DecompressorOxide::new();
+    decomp.init();
+    let mut ret: Vec<u8> = vec![0; input.len() * 2];
+
+    let mut in_pos = 0;
+    let mut out_pos = 0;
+    loop {
+        let (status, in_consumed, out_consumed) = {
+            // Wrap the whole output slice so we know we have enough of the
+            // decompressed data for matches.
+            let mut c = Cursor::new(ret.as_mut_slice());
+            c.set_position(out_pos as u64);
+            inflate::core::decompress(&mut decomp, &input[in_pos..], &mut c, flags)
+        };
+        in_pos += in_consumed;
+        out_pos += out_consumed;
+
+        match status {
+            inflate::TINFLStatus::Done => {
+                ret.truncate(out_pos);
+                return Ok((
+                    &[],
+                    IdatData {
+                        length: input.len(),
+                        data: ret,
+                    },
+                ));
+            }
+
+            inflate::TINFLStatus::HasMoreOutput => {
+                // We need more space so extend the buffer.
+                ret.extend(&vec![0; out_pos]);
+            }
+
+            _ => return map_res(rest, |_| Err(status))(input),
+        }
+    }
 }
 
 fn parse_time_data(input: &[u8]) -> IResult<&[u8], LastModificationTime> {
@@ -573,6 +618,12 @@ struct CompressedText {
 }
 
 #[derive(Debug)]
+struct IdatData {
+    length: usize,
+    data: Vec<u8>,
+}
+
+#[derive(Debug)]
 enum Background {
     Palette(u8),
     Gray(u16),
@@ -595,7 +646,7 @@ enum ChunkData<'a> {
     // Critical chunks
     IHDR(IHDRData), // image header
     // PLTE, // palette
-    // IDAT, // image data
+    IDAT(IdatData), // image data
     IEND, // image trailer
     // Ancillary chunks
     // tRNS, // transparency
@@ -622,7 +673,7 @@ fn parse_chunk_data(chunk: &Chunk) -> IResult<&[u8], ChunkData> {
         // --- Critical chunks ---
         ChunkType::IHDR => map(parse_ihdr_data, ChunkData::IHDR)(&chunk.data),
         ChunkType::PLTE => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::IDAT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
+        ChunkType::IDAT => map(parse_idat_data, ChunkData::IDAT)(&chunk.data),
         ChunkType::IEND => map(take(0u8), |_| ChunkData::IEND)(&chunk.data),
         // --- Ancillary chunks ---
         ChunkType::cHRM => map(take(0u8), ChunkData::Unknown)(&chunk.data),
