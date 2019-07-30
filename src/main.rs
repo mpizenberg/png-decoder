@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
+use miniz_oxide::inflate;
 use nom::bytes::complete::{tag, take, take_till};
-use nom::combinator::{map, map_res};
+use nom::combinator::{map, map_res, rest};
 use nom::multi::many1;
 use nom::number::complete::{be_u16, be_u32, be_u8};
 use nom::IResult;
@@ -498,7 +499,7 @@ fn parse_ztxt_data(input: &[u8]) -> IResult<&[u8], CompressedText> {
     let (input, keyword) = map(str_till_null, String::from)(input)?;
     let (input, _) = take(1_u8)(input)?;
     let (input, method) = be_u8(input)?;
-    let text = input.len();
+    let (input, text) = map_res(map_res(rest, miniz_oxide::inflate::decompress_to_vec_zlib), String::from_utf8)(input)?;
     Ok((
         input,
         CompressedText {
@@ -568,7 +569,7 @@ struct Text {
 struct CompressedText {
     keyword: String,
     method: u8,
-    text: usize,
+    text: String,
 }
 
 #[derive(Debug)]

@@ -1,5 +1,5 @@
 [package]
-name = "png-rs"
+name = "png-decoder"
 version = "0.1.0"
 authors = ["Matthieu Pizenberg <matthieu.pizenberg@gmail.com>"]
 edition = "2018"
@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 nom = "5.0"
 lazy_static = "1.3"
+miniz_oxide = "0.3"
