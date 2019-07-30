@@ -1,5 +1,6 @@
 use inflate::core::inflate_flags::{
-    TINFL_FLAG_PARSE_ZLIB_HEADER, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+    TINFL_FLAG_HAS_MORE_INPUT, TINFL_FLAG_PARSE_ZLIB_HEADER,
+    TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
 };
 use lazy_static::lazy_static;
 use miniz_oxide::inflate;
@@ -25,6 +26,16 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
     match parse_png(&data) {
         Ok((_, png)) => {
             let png_valid = validate_chunk_constraints(&png)?;
+            let idats: Vec<_> = png
+                .iter()
+                .filter(|c| c.chunk_type == ChunkType::IDAT)
+                .collect();
+            let pixel_data = parse_idats(idats.as_slice())?;
+            let ihdr_chunk = &png_valid[0];
+            let ihdr_data = parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+            let scanlines = get_scanlines(&ihdr_data, &pixel_data);
+            println!("There are {} pixel values", pixel_data.len());
+            println!("Scanlines:\n{:?}", scanlines);
             png_valid.iter().for_each(|chunk| {
                 match parse_chunk_data(chunk) {
                     Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
@@ -406,6 +417,29 @@ fn parse_ihdr_data(input: &[u8]) -> IResult<&[u8], IHDRData> {
     ))
 }
 
+// Remove the first byte (filter-type) of the scanline.
+fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(u8, &'a [u8])> {
+    let nb_chanels = match ihdr.color_type {
+        ColorType::Gray => 1,
+        ColorType::RGB => 3,
+        ColorType::GrayAlpha => 2,
+        ColorType::RGBA => 4,
+        ColorType::PLTE => panic!("Palette type not handled"),
+    };
+    let nb_bytes_per_pixel = std::cmp::max(1, ihdr.bit_depth as u32 / 8);
+    let full_line_length = 1 + ihdr.width * nb_chanels * nb_bytes_per_pixel;
+    assert_eq!(image_data.len() as u32, ihdr.height * full_line_length);
+    let lines_starts = (0..ihdr.height).map(|l| (l * full_line_length) as usize);
+    lines_starts
+        .map(|start| {
+            (
+                image_data[start],
+                &image_data[(start + 1)..(start + full_line_length as usize)],
+            )
+        })
+        .collect()
+}
+
 #[derive(Debug)]
 struct IHDRData {
     width: u32,
@@ -520,46 +554,57 @@ fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
     take_till(|c| c == 0)(input)
 }
 
-// TODO
-fn parse_idat_data(input: &[u8]) -> IResult<&[u8], IDATData> {
+fn parse_idats(idats: &[&Chunk]) -> Result<Vec<u8>, String> {
     let flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     let mut decomp = inflate::core::DecompressorOxide::new();
     decomp.init();
-    let mut ret: Vec<u8> = vec![0; input.len() * 2];
+    let compressed_length: u32 = idats.iter().map(|c| c.length).sum();
+    let mut ret: Vec<u8> = vec![0; 2 * compressed_length as usize];
 
-    let mut in_pos = 0;
+    let nb_chunk = idats.len();
     let mut out_pos = 0;
-    loop {
-        let (status, in_consumed, out_consumed) = {
-            // Wrap the whole output slice so we know we have enough of the
-            // decompressed data for matches.
-            let mut c = Cursor::new(ret.as_mut_slice());
-            c.set_position(out_pos as u64);
-            inflate::core::decompress(&mut decomp, &input[in_pos..], &mut c, flags)
+    for (id, chunk) in idats.iter().enumerate() {
+        let mut in_pos = 0;
+        let input = chunk.data;
+        let chunk_flags = if id == nb_chunk - 1 {
+            flags | TINFL_FLAG_HAS_MORE_INPUT
+        } else {
+            flags
         };
-        in_pos += in_consumed;
-        out_pos += out_consumed;
+        loop {
+            let (status, in_consumed, out_consumed) = {
+                // Wrap the whole output slice so we know we have enough of the
+                // decompressed data for matches.
+                let mut c = Cursor::new(ret.as_mut_slice());
+                c.set_position(out_pos as u64);
+                inflate::core::decompress(&mut decomp, &input[in_pos..], &mut c, chunk_flags)
+            };
+            in_pos += in_consumed;
+            out_pos += out_consumed;
 
-        match status {
-            inflate::TINFLStatus::Done => {
-                ret.truncate(out_pos);
-                return Ok((
-                    &[],
-                    IDATData {
-                        length: input.len(),
-                        data: ret,
-                    },
-                ));
+            match status {
+                inflate::TINFLStatus::Done => {
+                    ret.truncate(out_pos);
+                    return Ok(ret);
+                }
+
+                inflate::TINFLStatus::HasMoreOutput => {
+                    // We need more space so extend the buffer.
+                    ret.extend(&vec![0; out_pos]);
+                }
+
+                inflate::TINFLStatus::NeedsMoreInput => {
+                    // normal if we are not at the last chunk.
+                    if id == nb_chunk - 1 {
+                        return Err(format!("{:?}", status));
+                    }
+                }
+
+                _ => return Err(format!("{:?}", status)),
             }
-
-            inflate::TINFLStatus::HasMoreOutput => {
-                // We need more space so extend the buffer.
-                ret.extend(&vec![0; out_pos]);
-            }
-
-            _ => return map_res(rest, |_| Err(status))(input),
         }
     }
+    Ok(ret)
 }
 
 fn parse_time_data(input: &[u8]) -> IResult<&[u8], LastModificationTime> {
@@ -616,11 +661,11 @@ struct CompressedText {
     text: String,
 }
 
-#[derive(Debug)]
-struct IDATData {
-    length: usize,
-    data: Vec<u8>,
-}
+// #[derive(Debug)]
+// struct IDATData {
+//     length: usize,
+//     data: Vec<u8>,
+// }
 
 #[derive(Debug)]
 enum Background {
@@ -645,7 +690,7 @@ enum ChunkData<'a> {
     // Critical chunks
     IHDR(IHDRData), // image header
     // PLTE, // palette
-    IDAT(IDATData), // image data
+    // IDAT(IDATData), // image data
     IEND, // image trailer
     // Ancillary chunks
     // tRNS, // transparency
@@ -672,7 +717,7 @@ fn parse_chunk_data<'a>(chunk: &'a Chunk<'a>) -> IResult<&'a [u8], ChunkData<'a>
         // --- Critical chunks ---
         ChunkType::IHDR => map(parse_ihdr_data, ChunkData::IHDR)(&chunk.data),
         ChunkType::PLTE => map(take(0u8), ChunkData::Unknown)(&chunk.data),
-        ChunkType::IDAT => map(parse_idat_data, ChunkData::IDAT)(&chunk.data),
+        ChunkType::IDAT => map(take(0u8), ChunkData::Unknown)(&chunk.data),
         ChunkType::IEND => map(take(0u8), |_| ChunkData::IEND)(&chunk.data),
         // --- Ancillary chunks ---
         ChunkType::cHRM => map(take(0u8), ChunkData::Unknown)(&chunk.data),
