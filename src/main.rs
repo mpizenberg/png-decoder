@@ -35,8 +35,11 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
             let ihdr_data = parse_ihdr_data(ihdr_chunk.data).unwrap().1;
             let scanlines = get_scanlines(&ihdr_data, &pixel_data);
             println!("There are {} pixel values", pixel_data.len());
-            println!("Scanlines:\n{:?}", scanlines);
-            let img = unfilter(scanlines);
+            // println!("Scanlines:\n{:?}", scanlines);
+            display_filters(&scanlines);
+            let img = unfilter(&ihdr_data, scanlines);
+            // println!("{:?}", img.get(9, 0));
+            println!("{:?}", &img.data.as_slice()[0..10]);
             png_valid.iter().for_each(|chunk| {
                 match parse_chunk_data(chunk) {
                     Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
@@ -421,36 +424,93 @@ fn parse_ihdr_data(input: &[u8]) -> IResult<&[u8], IHDRData> {
 fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(Filter, &'a [u8])> {
     let nb_chanels = match ihdr.color_type {
         ColorType::Gray => 1,
-        ColorType::RGB => 3,
         ColorType::GrayAlpha => 2,
+        ColorType::RGB => 3,
         ColorType::RGBA => 4,
         ColorType::PLTE => panic!("Palette type not handled"),
     };
-    let nb_bytes_per_pixel = std::cmp::max(1, ihdr.bit_depth as u32 / 8);
-    let full_line_length = 1 + ihdr.width * nb_chanels * nb_bytes_per_pixel;
-    assert_eq!(image_data.len() as u32, ihdr.height * full_line_length);
-    let lines_starts = (0..ihdr.height).map(|l| (l * full_line_length) as usize);
+    let bytes_per_channel = std::cmp::max(1, ihdr.bit_depth as u32 / 8);
+    let full_line_length = (1 + ihdr.width * nb_chanels * bytes_per_channel) as usize;
+    assert_eq!(image_data.len(), ihdr.height as usize * full_line_length);
+    let lines_starts = (0..ihdr.height as usize).map(|l| l * full_line_length);
     lines_starts
         .map(|start| {
             (
                 Filter::try_from(image_data[start]).expect("Incorrect filter type"),
-                &image_data[(start + 1)..(start + full_line_length as usize)],
+                &image_data[(start + 1)..(start + full_line_length)],
             )
         })
         .collect()
 }
 
-fn unfilter(scanlines: Vec<(Filter, &[u8])>) -> Img {
-    // wrapping_add
-    unimplemented!();
-    Img::Gray
+fn display_filters(scanlines: &[(Filter, &[u8])]) -> () {
+    scanlines
+        .iter()
+        .for_each(|(filter, _)| print!("{:?}, ", filter));
+    println!("");
 }
 
-enum Img {
-    Gray,
-    GrayAlpha,
-    RGB,
-    RGBA,
+fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Img {
+    let width = ihdr.width as usize;
+    let height = ihdr.height as usize;
+    let bytes_per_channel = std::cmp::max(1, ihdr.bit_depth as usize / 8);
+    let bpp = bytes_per_channel
+        * match &ihdr.color_type {
+            ColorType::Gray => 1,
+            ColorType::GrayAlpha => 2,
+            ColorType::RGB => 3,
+            ColorType::RGBA => 4,
+            ColorType::PLTE => unimplemented!(),
+        };
+    println!("bytes_per_pixel: {}", bpp);
+    // let mut data = Vec::with_capacity(bpp * width * height);
+    let mut data = vec![0; bpp * width * height];
+    let mut data_slice = data.as_mut_slice();
+    let previous_init = vec![0; bpp * width];
+    scanlines.iter().fold(
+        previous_init.as_slice(),
+        |previous, (filter, line)| match filter {
+            Filter::None => unimplemented!(),
+            Filter::Sub => unfilter_sub(bpp, line, data_slice),
+            _ => unimplemented!(),
+        },
+    );
+    assert_eq!(height, scanlines.len());
+    assert_eq!(data.len(), bpp * width * height);
+    Img {
+        width,
+        height,
+        color_type: ColorType::RGBA,
+        bytes_per_pixel: bpp,
+        data,
+    }
+}
+
+fn unfilter_sub<'a>(bpp: usize, line: &[u8], data_slice: &'a mut [u8]) -> &'a [u8] {
+    line.iter().enumerate().for_each(|(i, p)| {
+        let left = if i >= bpp { data_slice[i - bpp] } else {0 };
+        data_slice[i] = p.wrapping_add(left);
+    });
+    let previous = &data_slice[..line.len()];
+    data_slice = &mut data_slice[line.len()..];
+    previous
+}
+
+struct Img {
+    width: usize,
+    height: usize,
+    color_type: ColorType,
+    bytes_per_pixel: usize,
+    data: Vec<u8>,
+}
+
+impl Img {
+    fn get(&self, x: usize, y: usize) -> &[u8] {
+        let line_width = self.bytes_per_pixel * self.width;
+        let start = y * line_width + x * self.bytes_per_pixel;
+        let end = start + self.bytes_per_pixel;
+        &self.data.as_slice()[start..end]
+    }
 }
 
 #[derive(Debug)]
