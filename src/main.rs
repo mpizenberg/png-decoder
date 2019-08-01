@@ -38,8 +38,8 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
             // println!("Scanlines:\n{:?}", scanlines);
             display_filters(&scanlines);
             let img = unfilter(&ihdr_data, scanlines);
-            // println!("{:?}", img.get(9, 0));
-            println!("{:?}", &img.data.as_slice()[0..10]);
+            println!("{:?}", img.get(393, 161));
+            // println!("{:?}", &img.data.as_slice()[0..10]);
             png_valid.iter().for_each(|chunk| {
                 match parse_chunk_data(chunk) {
                     Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
@@ -465,13 +465,12 @@ fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Img {
     println!("bytes_per_pixel: {}", bpp);
     // let mut data = Vec::with_capacity(bpp * width * height);
     let mut data = vec![0; bpp * width * height];
-    let mut data_slice = data.as_mut_slice();
-    let previous_init = vec![0; bpp * width];
+    let previous_slice_start = -(bpp as isize * width as isize);
     scanlines.iter().fold(
-        previous_init.as_slice(),
-        |previous, (filter, line)| match filter {
-            Filter::None => unimplemented!(),
-            Filter::Sub => unfilter_sub(bpp, line, data_slice),
+        previous_slice_start,
+        |previous_slice_start, (filter, line)| match filter {
+            Filter::None => unfilter_none(line, previous_slice_start, &mut data),
+            Filter::Sub => unfilter_sub(bpp, line, previous_slice_start, &mut data),
             _ => unimplemented!(),
         },
     );
@@ -486,14 +485,14 @@ fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Img {
     }
 }
 
-fn unfilter_sub<'a>(bpp: usize, line: &[u8], data_slice: &'a mut [u8]) -> &'a [u8] {
+fn unfilter_sub(bpp: usize, line: &[u8], previous_slice_start: isize, data: &mut Vec<u8>) -> isize {
+    let line_start = (previous_slice_start + line.len() as isize) as usize;
+    let data_line = &mut data.as_mut_slice()[line_start..];
     line.iter().enumerate().for_each(|(i, p)| {
-        let left = if i >= bpp { data_slice[i - bpp] } else {0 };
-        data_slice[i] = p.wrapping_add(left);
+        let left = if i >= bpp { data_line[i - bpp] } else { 0 };
+        data_line[i] = p.wrapping_add(left);
     });
-    let previous = &data_slice[..line.len()];
-    data_slice = &mut data_slice[line.len()..];
-    previous
+    line_start as isize
 }
 
 struct Img {
