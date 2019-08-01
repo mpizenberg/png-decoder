@@ -36,6 +36,7 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
             let scanlines = get_scanlines(&ihdr_data, &pixel_data);
             println!("There are {} pixel values", pixel_data.len());
             println!("Scanlines:\n{:?}", scanlines);
+            let img = unfilter(scanlines);
             png_valid.iter().for_each(|chunk| {
                 match parse_chunk_data(chunk) {
                     Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
@@ -417,8 +418,7 @@ fn parse_ihdr_data(input: &[u8]) -> IResult<&[u8], IHDRData> {
     ))
 }
 
-// Remove the first byte (filter-type) of the scanline.
-fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(u8, &'a [u8])> {
+fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(Filter, &'a [u8])> {
     let nb_chanels = match ihdr.color_type {
         ColorType::Gray => 1,
         ColorType::RGB => 3,
@@ -433,11 +433,47 @@ fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(u8, &'a [u8]
     lines_starts
         .map(|start| {
             (
-                image_data[start],
+                Filter::try_from(image_data[start]).expect("Incorrect filter type"),
                 &image_data[(start + 1)..(start + full_line_length as usize)],
             )
         })
         .collect()
+}
+
+fn unfilter(scanlines: Vec<(Filter, &[u8])>) -> Img {
+    // wrapping_add
+    unimplemented!();
+    Img::Gray
+}
+
+enum Img {
+    Gray,
+    GrayAlpha,
+    RGB,
+    RGBA,
+}
+
+#[derive(Debug)]
+enum Filter {
+    None,
+    Sub,
+    Up,
+    Average,
+    Paeth,
+}
+
+impl TryFrom<u8> for Filter {
+    type Error = String;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Filter::None),
+            1 => Ok(Filter::Sub),
+            2 => Ok(Filter::Up),
+            3 => Ok(Filter::Average),
+            4 => Ok(Filter::Paeth),
+            _ => Err(format!("Filter type {} is not valid", value)),
+        }
+    }
 }
 
 #[derive(Debug)]
