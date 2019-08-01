@@ -567,9 +567,9 @@ fn parse_idats(idats: &[&Chunk]) -> Result<Vec<u8>, String> {
         let mut in_pos = 0;
         let input = chunk.data;
         let chunk_flags = if id == nb_chunk - 1 {
-            flags | TINFL_FLAG_HAS_MORE_INPUT
-        } else {
             flags
+        } else {
+            flags | TINFL_FLAG_HAS_MORE_INPUT
         };
         loop {
             let (status, in_consumed, out_consumed) = {
@@ -597,6 +597,8 @@ fn parse_idats(idats: &[&Chunk]) -> Result<Vec<u8>, String> {
                     // normal if we are not at the last chunk.
                     if id == nb_chunk - 1 {
                         return Err(format!("{:?}", status));
+                    } else {
+                        break;
                     }
                 }
 
