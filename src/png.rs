@@ -36,6 +36,24 @@ const SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 // FUNCTIONS ###################################################################
 
 pub fn decode_no_check(input: &[u8]) -> Result<Png, Box<Error>> {
+    match parse_chunks(input) {
+        Ok((_, chunks)) => {
+            let ihdr_chunk = &chunks[0];
+            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+            let idats: Vec<_> = chunks
+                .iter()
+                .filter(|c| c.chunk_type == ChunkType::IDAT)
+                .collect();
+            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+            let scanlines = get_scanlines(&ihdr_data, &inflated_idats);
+            let png_img = unfilter(&ihdr_data, scanlines);
+            Ok(png_img)
+        }
+        Err(e) => Err(format!("{:?}", e).into()),
+    }
+}
+
+pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
     let mut now = std::time::Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
@@ -106,6 +124,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
         };
     let mut data = vec![0; bpp * width * height];
     let line_start = 0;
+    // let now = std::time::Instant::now();
     scanlines
         .iter()
         .fold(line_start, |line_start, (filter, line)| match filter {
@@ -115,6 +134,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
             Filter::Average => filter::decode_average(bpp, line, line_start, &mut data),
             Filter::Paeth => filter::decode_paeth(bpp, line, line_start, &mut data),
         });
+    // println!("fold over scanlines: {} ms", now.elapsed().as_millis());
     assert_eq!(height, scanlines.len());
     assert_eq!(data.len(), bpp * width * height);
     Png {
