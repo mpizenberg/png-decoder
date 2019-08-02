@@ -15,41 +15,41 @@ fn main() {
 
 fn run(args: &[String]) -> Result<(), Box<Error>> {
     let data = fs::read(&args[1])?;
-    // let _ = png::decode_no_check(&data)?;
-    match png::parse_chunks(&data) {
-        Ok((_, chunks)) => {
-            let chunks_valid = chunk::validate_chunk_constraints(&chunks)?;
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            let ihdr_chunk = &chunks_valid[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            let scanlines = png::get_scanlines(&ihdr_data, &inflated_idats);
-            println!("Inflate image data size: {}", inflated_idats.len());
-            // println!("Scanlines:\n{:?}", scanlines);
-            display_filters(&scanlines);
-            let img = png::unfilter(&ihdr_data, scanlines);
-            println!("{:?}", img.get(77, 21));
-            println!("{:?}", img.get(78, 21));
-            println!("{:?}", img.get(79, 21));
-            println!("{:?}", img.get(80, 21));
-            println!("{:?}", img.get(81, 21));
-            println!("{:?}", img.get(82, 21));
-            // println!("{:?}", &img.data.as_slice()[0..10]);
-            chunks_valid.iter().for_each(|chunk| {
-                match chunk_data::parse_chunk_data(chunk) {
-                    Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
-                    Ok((_, chunk_data)) => println!("{:?}", chunk_data),
-                    Err(e) => eprintln!("{:?}", e),
-                };
-            });
-        }
-        Err(e) => {
-            eprintln!("{:?}", e);
-        }
-    }
+    let _ = png::decode_no_check(&data)?;
+    // match png::parse_chunks(&data) {
+    //     Ok((_, chunks)) => {
+    //         let chunks_valid = chunk::validate_chunk_constraints(&chunks)?;
+    //         let idats: Vec<_> = chunks
+    //             .iter()
+    //             .filter(|c| c.chunk_type == ChunkType::IDAT)
+    //             .collect();
+    //         let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+    //         let ihdr_chunk = &chunks_valid[0];
+    //         let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+    //         let scanlines = png::get_scanlines(&ihdr_data, &inflated_idats);
+    //         println!("Inflate image data size: {}", inflated_idats.len());
+    //         // println!("Scanlines:\n{:?}", scanlines);
+    //         display_filters(&scanlines);
+    //         let img = png::unfilter(&ihdr_data, scanlines);
+    //         println!("{:?}", img.get(77, 21));
+    //         println!("{:?}", img.get(78, 21));
+    //         println!("{:?}", img.get(79, 21));
+    //         println!("{:?}", img.get(80, 21));
+    //         println!("{:?}", img.get(81, 21));
+    //         println!("{:?}", img.get(82, 21));
+    //         // println!("{:?}", &img.data.as_slice()[0..10]);
+    //         chunks_valid.iter().for_each(|chunk| {
+    //             match chunk_data::parse_chunk_data(chunk) {
+    //                 Ok((_, ChunkData::Unknown(_))) => println!("{}", chunk),
+    //                 Ok((_, chunk_data)) => println!("{:?}", chunk_data),
+    //                 Err(e) => eprintln!("{:?}", e),
+    //             };
+    //         });
+    //     }
+    //     Err(e) => {
+    //         eprintln!("{:?}", e);
+    //     }
+    // }
     println!("All done!");
     Ok(())
 }
