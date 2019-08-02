@@ -2,10 +2,11 @@ use nom::bytes::complete::tag;
 use nom::multi::many1;
 use nom::IResult;
 use std::convert::TryFrom;
+use std::error::Error;
 
 // inner modules
-use crate::chunk::Chunk;
-use crate::chunk_data::IHDRData;
+use crate::chunk::{Chunk, ChunkType};
+use crate::chunk_data::{self, IHDRData};
 use crate::color::ColorType;
 use crate::filter::{self, Filter};
 
@@ -33,6 +34,23 @@ const SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 // const EXTENDED_SIGNATURE: [u8; 12] = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13];
 
 // FUNCTIONS ###################################################################
+
+pub fn decode_no_check(input: &[u8]) -> Result<Png, Box<Error>> {
+    match parse_chunks(input) {
+        Ok((_, chunks)) => {
+            let ihdr_chunk = &chunks[0];
+            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+            let idats: Vec<_> = chunks
+                .iter()
+                .filter(|c| c.chunk_type == ChunkType::IDAT)
+                .collect();
+            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+            let scanlines = get_scanlines(&ihdr_data, &inflated_idats);
+            Ok(unfilter(&ihdr_data, scanlines))
+        }
+        Err(e) => Err(format!("{:?}", e).into()),
+    }
+}
 
 pub fn parse_chunks(input: &[u8]) -> IResult<&[u8], Vec<Chunk>> {
     let (input, _) = tag(SIGNATURE)(input)?;
@@ -73,8 +91,6 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
             ColorType::RGBA => 4,
             ColorType::PLTE => unimplemented!(),
         };
-    println!("bytes_per_pixel: {}", bpp);
-    // let mut data = Vec::with_capacity(bpp * width * height);
     let mut data = vec![0; bpp * width * height];
     let line_start = 0;
     scanlines

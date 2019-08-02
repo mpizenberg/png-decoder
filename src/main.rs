@@ -15,6 +15,7 @@ fn main() {
 
 fn run(args: &[String]) -> Result<(), Box<Error>> {
     let data = fs::read(&args[1])?;
+    // let _ = png::decode_no_check(&data)?;
     match png::parse_chunks(&data) {
         Ok((_, chunks)) => {
             let chunks_valid = chunk::validate_chunk_constraints(&chunks)?;
@@ -22,11 +23,11 @@ fn run(args: &[String]) -> Result<(), Box<Error>> {
                 .iter()
                 .filter(|c| c.chunk_type == ChunkType::IDAT)
                 .collect();
-            let pixel_data = chunk_data::parse_idats(idats.as_slice())?;
+            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
             let ihdr_chunk = &chunks_valid[0];
             let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            let scanlines = png::get_scanlines(&ihdr_data, &pixel_data);
-            println!("There are {} pixel values", pixel_data.len());
+            let scanlines = png::get_scanlines(&ihdr_data, &inflated_idats);
+            println!("Inflate image data size: {}", inflated_idats.len());
             // println!("Scanlines:\n{:?}", scanlines);
             display_filters(&scanlines);
             let img = png::unfilter(&ihdr_data, scanlines);
