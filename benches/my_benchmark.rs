@@ -3,7 +3,13 @@ use png;
 use png_decoder::png as my_png;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let png_raw_data = std::fs::read("data/depth.png").unwrap();
+    // let png_raw_data = std::fs::read("data/depth.png").unwrap();
+    // let png_raw_data = std::fs::read("data/eye.png").unwrap();
+    // let png_raw_data = std::fs::read("data/inkscape.png").unwrap();
+    // let png_raw_data = std::fs::read("data/rgb.png").unwrap();
+    // let png_raw_data = std::fs::read("data/screen.png").unwrap();
+    // let png_raw_data = std::fs::read("data/texture_alpha.png").unwrap();
+    let png_raw_data = std::fs::read("data/transparent.png").unwrap();
     let png_raw_data_clone = png_raw_data.clone();
 
     c.bench_function("this lib, data/transparent.png", move |b| {

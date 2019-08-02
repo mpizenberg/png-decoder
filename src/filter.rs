@@ -23,16 +23,19 @@ impl TryFrom<u8> for Filter {
     }
 }
 
+#[inline]
 pub fn decode_none(line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     let next_line_start = line_start + line.len();
     data[line_start..next_line_start].copy_from_slice(line);
     next_line_start
 }
 
+#[inline]
 pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
-    let data_line = &mut data.as_mut_slice()[line_start..];
-    line.iter().enumerate().for_each(|(i, p)| {
-        let left = if i >= bpp { data_line[i - bpp] } else { 0 };
+    data[line_start..line_start + bpp].copy_from_slice(&line[0..bpp]);
+    let data_line = &mut data[line_start..];
+    line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
+        let left = data_line[i - bpp];
         data_line[i] = p.wrapping_add(left);
     });
     line_start + line.len()
@@ -40,70 +43,55 @@ pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u8>
 
 pub fn decode_up(line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     if line_start == 0 {
-        line.iter().enumerate().for_each(|(i, p)| {
-            data[line_start + i] = *p;
-        });
+        decode_none(line, line_start, data)
     } else {
         let previous_line_start = line_start - line.len();
         line.iter().enumerate().for_each(|(i, p)| {
             let up = data[previous_line_start + i];
             data[line_start + i] = p.wrapping_add(up);
         });
+        line_start + line.len()
     }
-    line_start + line.len()
 }
 
 pub fn decode_average(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     if line_start == 0 {
-        line.iter().enumerate().for_each(|(i, p)| {
-            let left = if i >= bpp {
-                data[line_start + i - bpp]
-            } else {
-                0
-            };
-            data[line_start + i] = p.wrapping_add(left);
-        });
+        decode_sub(bpp, line, line_start, data)
     } else {
         let previous_line_start = line_start - line.len();
-        line.iter().enumerate().for_each(|(i, p)| {
+        let line_start_bpp = line_start - bpp;
+        line.iter().take(bpp).enumerate().for_each(|(i, p)| {
+            let up = data[previous_line_start + i];
+            data[line_start + i] = p.wrapping_add(up / 2);
+        });
+        line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
             let up = data[previous_line_start + i] as u16;
-            let left = if i >= bpp {
-                data[line_start + i - bpp]
-            } else {
-                0
-            } as u16;
+            let left = data[line_start_bpp + i] as u16;
             data[line_start + i] = p.wrapping_add(((up + left) / 2) as u8);
         });
+        line_start + line.len()
     }
-    line_start + line.len()
 }
 
 pub fn decode_paeth(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     if line_start == 0 {
-        line.iter().enumerate().for_each(|(i, p)| {
-            let left = if i >= bpp {
-                data[line_start + i - bpp]
-            } else {
-                0
-            };
-            data[line_start + i] = p.wrapping_add(paeth_predictor(left, 0, 0));
-        });
+        decode_sub(bpp, line, line_start, data)
     } else {
         let previous_line_start = line_start - line.len();
-        line.iter().enumerate().for_each(|(i, p)| {
-            let (up_left, up, left) = if i >= bpp {
-                (
-                    data[previous_line_start + i - bpp],
-                    data[previous_line_start + i],
-                    data[line_start + i - bpp],
-                )
-            } else {
-                (0, data[previous_line_start + i], 0)
-            };
+        line.iter().enumerate().take(bpp).for_each(|(i, p)| {
+            let up = data[previous_line_start + i];
+            data[line_start + i] = p.wrapping_add(up);
+        });
+        let previous_line_start_bpp = previous_line_start - bpp;
+        let line_start_bpp = line_start - bpp;
+        line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
+            let up_left = data[previous_line_start_bpp + i];
+            let up = data[previous_line_start + i];
+            let left = data[line_start_bpp + i];
             data[line_start + i] = p.wrapping_add(paeth_predictor(left, up, up_left));
         });
+        line_start + line.len()
     }
-    line_start + line.len()
 }
 
 // http://www.libpng.org/pub/png/spec/1.2/png-1.2-pdg.html#Filters
@@ -117,6 +105,7 @@ pub fn decode_paeth(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u
 // if pa <= pb AND pa <= pc then return a
 // else if pb <= pc then return b
 // else return c
+#[inline]
 fn paeth_predictor(left: u8, up: u8, up_left: u8) -> u8 {
     let (a, b, c) = (left as i16, up as i16, up_left as i16);
     let p = a + b - c; // initial estimate
