@@ -15,13 +15,14 @@ fn main() {
 
 fn run(args: &[String]) -> Result<(), Box<Error>> {
     let data = fs::read(&args[1])?;
+    let _ = png::decode_no_check_verbose_bis(&data)?;
     // let _ = png::decode_no_check_verbose(&data)?;
-    let _ = decode_verbose(&data)?;
+    // let _ = decode_verbose(&data)?;
     println!("All done!");
     Ok(())
 }
 
-fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
+pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
     match png::parse_chunks(data) {
         Ok((_, chunks)) => {
             let chunks_valid = chunk::validate_chunk_constraints(&chunks)?;
