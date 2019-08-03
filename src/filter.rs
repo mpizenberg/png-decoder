@@ -23,6 +23,28 @@ impl TryFrom<u8> for Filter {
     }
 }
 
+pub fn unfilter(
+    width: usize,
+    height: usize,
+    bpp: usize,
+    scanlines: Vec<(Filter, &[u8])>,
+) -> Vec<u8> {
+    let mut data = vec![0; bpp * width * height];
+    assert_eq!(height, scanlines.len());
+    assert_eq!(data.len(), bpp * width * height);
+    let line_start = 0;
+    scanlines
+        .iter()
+        .fold(line_start, |line_start, (filter, line)| match filter {
+            Filter::None => decode_none(line, line_start, &mut data),
+            Filter::Sub => decode_sub(bpp, line, line_start, &mut data),
+            Filter::Up => decode_up(line, line_start, &mut data),
+            Filter::Average => decode_average(bpp, line, line_start, &mut data),
+            Filter::Paeth => decode_paeth(bpp, line, line_start, &mut data),
+        });
+    data
+}
+
 #[inline]
 pub fn decode_none(line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     let next_line_start = line_start + line.len();

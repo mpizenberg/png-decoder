@@ -122,21 +122,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
             ColorType::RGBA => 4,
             ColorType::PLTE => unimplemented!(),
         };
-    let mut data = vec![0; bpp * width * height];
-    let line_start = 0;
-    // let now = std::time::Instant::now();
-    scanlines
-        .iter()
-        .fold(line_start, |line_start, (filter, line)| match filter {
-            Filter::None => filter::decode_none(line, line_start, &mut data),
-            Filter::Sub => filter::decode_sub(bpp, line, line_start, &mut data),
-            Filter::Up => filter::decode_up(line, line_start, &mut data),
-            Filter::Average => filter::decode_average(bpp, line, line_start, &mut data),
-            Filter::Paeth => filter::decode_paeth(bpp, line, line_start, &mut data),
-        });
-    // println!("fold over scanlines: {} ms", now.elapsed().as_millis());
-    assert_eq!(height, scanlines.len());
-    assert_eq!(data.len(), bpp * width * height);
+    let data = filter::unfilter(width, height, bpp, scanlines);
     Png {
         width,
         height,
