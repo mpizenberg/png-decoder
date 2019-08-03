@@ -15,6 +15,12 @@ miniz_oxide = "0.3"
 criterion = "0.2"
 png = "0.15"
 
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+# opt-level = "s"
+opt-level = 3
+lto = true
+
 [[bench]]
 name = "my_benchmark"
 harness = false
