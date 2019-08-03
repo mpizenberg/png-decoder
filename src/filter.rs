@@ -45,6 +45,27 @@ pub fn unfilter(
     data
 }
 
+pub fn unfilter_buffer(
+    width: usize,
+    height: usize,
+    bpp: usize,
+    scanlines: Vec<(Filter, &[u8])>,
+) -> Vec<u8> {
+    let mut data = vec![0; bpp * width * height];
+    let mut previous = vec![0; bpp * width];
+    let line_start = 0;
+    scanlines
+        .iter()
+        .fold(line_start, |line_start, (filter, line)| match filter {
+            Filter::None => decode_none(line, line_start, &mut data),
+            Filter::Sub => decode_sub(bpp, line, line_start, &mut data),
+            Filter::Up => decode_up(line, line_start, &mut data),
+            Filter::Average => decode_average(bpp, line, line_start, &mut data),
+            Filter::Paeth => decode_paeth_buf(bpp, line, line_start, &mut data, &mut previous),
+        });
+    data
+}
+
 #[inline]
 pub fn decode_none(line: &[u8], line_start: usize, data: &mut Vec<u8>) -> usize {
     let next_line_start = line_start + line.len();
@@ -109,6 +130,32 @@ pub fn decode_paeth(bpp: usize, line: &[u8], line_start: usize, data: &mut Vec<u
         line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
             let up_left = data[previous_line_start_bpp + i];
             let up = data[previous_line_start + i];
+            let left = data[line_start_bpp + i];
+            data[line_start + i] = p.wrapping_add(paeth_predictor(left, up, up_left));
+        });
+        line_start + line.len()
+    }
+}
+
+pub fn decode_paeth_buf(
+    bpp: usize,
+    line: &[u8],
+    line_start: usize,
+    data: &mut Vec<u8>,
+    previous: &mut Vec<u8>,
+) -> usize {
+    if line_start == 0 {
+        decode_sub(bpp, line, line_start, data)
+    } else {
+        previous.copy_from_slice(&data[line_start - line.len()..line_start]);
+        line.iter().enumerate().take(bpp).for_each(|(i, p)| {
+            let up = previous[i];
+            data[line_start + i] = p.wrapping_add(up);
+        });
+        let line_start_bpp = line_start - bpp;
+        line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
+            let up_left = previous[i - bpp];
+            let up = previous[i];
             let left = data[line_start_bpp + i];
             data[line_start + i] = p.wrapping_add(paeth_predictor(left, up, up_left));
         });

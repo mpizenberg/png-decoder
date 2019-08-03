@@ -123,6 +123,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
             ColorType::PLTE => unimplemented!(),
         };
     let data = filter::unfilter(width, height, bpp, scanlines);
+    // let data = filter::unfilter_buffer(width, height, bpp, scanlines);
     Png {
         width,
         height,
