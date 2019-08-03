@@ -55,14 +55,23 @@ pub fn unfilter_bis(
     let len = bpp * width;
     let mut data = vec![0; height * len];
     let mut prev_buff = vec![0; len];
-    let data_start = 0;
-    scanlines
-        .into_iter()
-        .fold(data_start, |data_start, (filter, start)| match filter {
+    let mut data_start = 0;
+    for (filter, start) in scanlines.into_iter() {
+        match filter {
             Filter::None => decode_none_bis(len, start, inflated, data_start, &mut data),
             Filter::Sub => decode_sub_bis(bpp, len, start, inflated, data_start, &mut data),
-            Filter::Up => decode_up_bis(len, start, inflated, data_start, &mut data),
-            Filter::Average => decode_average_bis(bpp, len, start, inflated, data_start, &mut data),
+            Filter::Up => {
+                decode_up_bis(len, start, inflated, data_start, &mut data, &mut prev_buff)
+            }
+            Filter::Average => decode_average_bis(
+                bpp,
+                len,
+                start,
+                inflated,
+                data_start,
+                &mut data,
+                &mut prev_buff,
+            ),
             Filter::Paeth => decode_paeth_bis(
                 bpp,
                 len,
@@ -72,7 +81,9 @@ pub fn unfilter_bis(
                 &mut data,
                 &mut prev_buff,
             ),
-        });
+        };
+        data_start += len;
+    }
     data
 }
 
@@ -111,9 +122,8 @@ pub fn decode_none_bis(
     inflated: &mut [u8],
     data_start: usize,
     data: &mut [u8],
-) -> usize {
+) -> () {
     data[data_start..data_start + len].copy_from_slice(&inflated[start..start + len]);
-    data_start + len
 }
 
 #[inline]
@@ -124,13 +134,13 @@ pub fn decode_sub_bis(
     inflated: &mut [u8],
     data_start: usize,
     data: &mut [u8],
-) -> usize {
+) -> () {
+    let current = &inflated[start..start + len];
     let data_line = &mut data[data_start..];
-    data_line[..bpp].copy_from_slice(&inflated[start..start + bpp]);
+    data_line[..bpp].copy_from_slice(&current[..bpp]);
     for i in bpp..len {
-        data_line[i] = inflated[start + i].wrapping_add(data_line[i - bpp]);
+        data_line[i] = current[i].wrapping_add(data_line[i - bpp]);
     }
-    data_start + len
 }
 
 pub fn decode_up_bis(
@@ -139,16 +149,17 @@ pub fn decode_up_bis(
     inflated: &mut [u8],
     data_start: usize,
     data: &mut [u8],
-) -> usize {
+    prev_buff: &mut [u8],
+) -> () {
     if data_start == 0 {
-        decode_none_bis(len, start, inflated, data_start, data)
+        decode_none_bis(len, start, inflated, data_start, data);
     } else {
-        let previous_data_start = data_start - len;
+        prev_buff.copy_from_slice(&data[data_start - len..data_start]);
+        let current = &mut inflated[start..start + len];
         for i in 0..len {
-            let up = data[previous_data_start + i];
-            data[data_start + i] = inflated[start + i].wrapping_add(up);
+            current[i] = current[i].wrapping_add(prev_buff[i]);
         }
-        data_start + len
+        data[data_start..data_start + len].copy_from_slice(&current);
     }
 }
 
@@ -159,20 +170,22 @@ pub fn decode_average_bis(
     inflated: &mut [u8],
     data_start: usize,
     data: &mut [u8],
-) -> usize {
+    prev_buff: &mut [u8],
+) -> () {
     if data_start == 0 {
-        decode_sub_bis(bpp, len, start, inflated, data_start, data)
+        decode_sub_bis(bpp, len, start, inflated, data_start, data);
     } else {
+        prev_buff.copy_from_slice(&data[data_start - len..data_start]);
+        let current = &mut inflated[start..start + len];
         for i in 0..bpp {
-            let up = data[data_start - len + i];
-            data[data_start + i] = inflated[start + i].wrapping_add(up / 2);
+            current[i] = current[i].wrapping_add(prev_buff[i] / 2);
         }
         for i in bpp..len {
-            let up = data[data_start - len + i] as u16;
-            let left = data[data_start + i - bpp] as u16;
-            data[data_start + i] = inflated[start + i].wrapping_add(((up + left) / 2) as u8);
+            let up = prev_buff[i] as u16;
+            let left = current[i - bpp] as u16;
+            current[i] = current[i].wrapping_add(((up + left) / 2) as u8);
         }
-        data_start + len
+        data[data_start..data_start + len].copy_from_slice(&current);
     }
 }
 
@@ -184,9 +197,9 @@ pub fn decode_paeth_bis(
     data_start: usize,
     data: &mut [u8],
     prev_buff: &mut [u8],
-) -> usize {
+) -> () {
     if data_start == 0 {
-        decode_sub_bis(bpp, len, start, inflated, data_start, data)
+        decode_sub_bis(bpp, len, start, inflated, data_start, data);
     } else {
         prev_buff.copy_from_slice(&data[data_start - len..data_start]);
         let current = &mut inflated[start..start + len];
@@ -200,7 +213,6 @@ pub fn decode_paeth_bis(
             current[i] = current[i].wrapping_add(paeth_predictor(left, up, up_left));
         }
         data[data_start..data_start + len].copy_from_slice(&current);
-        data_start + len
     }
 }
 

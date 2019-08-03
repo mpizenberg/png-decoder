@@ -113,6 +113,24 @@ pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
     }
 }
 
+pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
+    match parse_chunks(input) {
+        Ok((_, chunks)) => {
+            let ihdr_chunk = &chunks[0];
+            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+            let idats: Vec<_> = chunks
+                .iter()
+                .filter(|c| c.chunk_type == ChunkType::IDAT)
+                .collect();
+            let mut inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+            let scanlines = get_scanlines_bis(&ihdr_data, &inflated_idats);
+            let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
+            Ok(png_img)
+        }
+        Err(e) => Err(format!("{:?}", e).into()),
+    }
+}
+
 pub fn parse_chunks(input: &[u8]) -> IResult<&[u8], Vec<Chunk>> {
     let (input, _) = tag(SIGNATURE)(input)?;
     many1(Chunk::parse)(input)
