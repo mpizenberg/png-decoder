@@ -115,7 +115,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
     let height = ihdr.height as usize;
     let bytes_per_channel = std::cmp::max(1, ihdr.bit_depth as usize / 8);
     let bpp = bytes_per_channel
-        * match &ihdr.color_type {
+        * match ihdr.color_type {
             ColorType::Gray => 1,
             ColorType::GrayAlpha => 2,
             ColorType::RGB => 3,
@@ -140,7 +140,7 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
     Png {
         width,
         height,
-        color_type: ColorType::RGBA,
+        color_type: ihdr.color_type,
         bytes_per_pixel: bpp,
         data,
     }

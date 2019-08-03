@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ColorType {
     Gray,
     RGB,
