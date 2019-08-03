@@ -57,26 +57,26 @@ pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
     let mut now = std::time::Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
-            println!("parse_chunks: {} ms", now.elapsed().as_millis());
+            println!("parse_chunks: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let ihdr_chunk = &chunks[0];
             let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            println!("parse_ihdr_data: {} ms", now.elapsed().as_millis());
+            println!("parse_ihdr_data: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let idats: Vec<_> = chunks
                 .iter()
                 .filter(|c| c.chunk_type == ChunkType::IDAT)
                 .collect();
-            println!("filter idats: {} ms", now.elapsed().as_millis());
+            println!("filter idats: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            println!("inflate idats: {} ms", now.elapsed().as_millis());
+            println!("inflate idats: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let scanlines = get_scanlines(&ihdr_data, &inflated_idats);
-            println!("get_scanlines: {} ms", now.elapsed().as_millis());
+            println!("get_scanlines: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let png_img = unfilter(&ihdr_data, scanlines);
-            println!("unfilter: {} ms", now.elapsed().as_millis());
+            println!("unfilter: {} us", now.elapsed().as_micros());
             Ok(png_img)
         }
         Err(e) => Err(format!("{:?}", e).into()),
@@ -122,8 +122,8 @@ pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
             ColorType::RGBA => 4,
             ColorType::PLTE => unimplemented!(),
         };
-    let data = filter::unfilter(width, height, bpp, scanlines);
-    // let data = filter::unfilter_buffer(width, height, bpp, scanlines);
+    // let data = filter::unfilter(width, height, bpp, scanlines);
+    let data = filter::unfilter_buffer(width, height, bpp, scanlines);
     Png {
         width,
         height,
