@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Filter {
     None,
     Sub,
@@ -19,6 +19,18 @@ impl TryFrom<u8> for Filter {
             3 => Ok(Filter::Average),
             4 => Ok(Filter::Paeth),
             _ => Err(format!("Filter type {} is not valid", value)),
+        }
+    }
+}
+
+impl Into<u8> for Filter {
+    fn into(self) -> u8 {
+        match self {
+            Filter::None => 0,
+            Filter::Sub => 1,
+            Filter::Up => 2,
+            Filter::Average => 3,
+            Filter::Paeth => 4,
         }
     }
 }

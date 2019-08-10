@@ -1,8 +1,8 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use png;
 use png_decoder::png as my_png;
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn bench(c: &mut Criterion) {
     let png_raw_data = std::fs::read("data/depth.png").unwrap();
     // let png_raw_data = std::fs::read("data/eye.png").unwrap();
     // let png_raw_data = std::fs::read("data/inkscape.png").unwrap();
@@ -39,6 +39,5 @@ fn criterion_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = criterion_benchmark
+    targets = bench
 }
-criterion_main!(benches);
