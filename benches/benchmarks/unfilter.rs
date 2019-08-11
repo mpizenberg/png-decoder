@@ -1,5 +1,5 @@
 use super::common;
-use criterion::{criterion_group, Criterion};
+use criterion::{black_box as bb, criterion_group, Criterion};
 use lazy_static::lazy_static;
 use png_decoder::filter::{self, Filter};
 
@@ -77,14 +77,14 @@ fn unfilter_paeth(c: &mut Criterion) {
 
 fn unfilter_slice(data: &[u8]) {
     let data = data.to_vec();
-    let scanlines = common::lines_slices(&data, SCANLINE_WIDTH);
-    filter::unfilter(WIDTH, HEIGHT, BPP, scanlines);
+    let scanlines = common::lines_slices(&data, bb(SCANLINE_WIDTH));
+    filter::unfilter(bb(WIDTH), bb(HEIGHT), bb(BPP), scanlines);
 }
 
 fn unfilter_mut(data: &[u8]) {
     let mut data = data.to_vec();
-    let scanlines = common::lines_num(&data, SCANLINE_WIDTH);
-    filter::unfilter_bis(WIDTH, HEIGHT, BPP, scanlines, &mut data);
+    let scanlines = common::lines_num(&data, bb(SCANLINE_WIDTH));
+    filter::unfilter_bis(bb(WIDTH), bb(HEIGHT), bb(BPP), scanlines, &mut data);
 }
 
 criterion_group! {
