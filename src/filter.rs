@@ -209,12 +209,11 @@ pub fn decode_paeth_bis(
 
 #[inline]
 pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut [u8]) {
-    data[line_start..line_start + bpp].copy_from_slice(&line[0..bpp]);
     let data_line = &mut data[line_start..];
-    line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
-        let left = data_line[i - bpp];
-        data_line[i] = p.wrapping_add(left);
-    });
+    data_line[..bpp].copy_from_slice(&line[..bpp]);
+    for i in bpp..line.len() {
+        data_line[i] = line[i].wrapping_add(data_line[i - bpp]);
+    }
 }
 
 pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut [u8]) {
