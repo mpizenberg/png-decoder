@@ -41,18 +41,20 @@ pub fn unfilter(
     bpp: usize,
     scanlines: Vec<(Filter, &[u8])>,
 ) -> Vec<u8> {
-    let mut data = vec![0; bpp * width * height];
-    let mut prev = vec![0; bpp * width];
-    let line_start = 0;
-    scanlines
-        .iter()
-        .fold(line_start, |line_start, (filter, line)| match filter {
+    let len = bpp * width;
+    let mut data = vec![0; len * height];
+    let mut prev = vec![0; len];
+    let mut line_start = 0;
+    for (filter, line) in scanlines.into_iter() {
+        match filter {
             Filter::None => decode_none(line, line_start, &mut data),
             Filter::Sub => decode_sub(bpp, line, line_start, &mut data),
             Filter::Up => decode_up(line, line_start, &mut data, &mut prev),
             Filter::Average => decode_average(bpp, line, line_start, &mut data, &mut prev),
             Filter::Paeth => decode_paeth(bpp, line, line_start, &mut data, &mut prev),
-        });
+        };
+        line_start += len;
+    }
     data
 }
 
@@ -99,10 +101,9 @@ pub fn unfilter_bis(
 }
 
 #[inline]
-pub fn decode_none(line: &[u8], line_start: usize, data: &mut [u8]) -> usize {
+pub fn decode_none(line: &[u8], line_start: usize, data: &mut [u8]) {
     let next_line_start = line_start + line.len();
     data[line_start..next_line_start].copy_from_slice(line);
-    next_line_start
 }
 
 #[inline]
@@ -207,17 +208,16 @@ pub fn decode_paeth_bis(
 }
 
 #[inline]
-pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut [u8]) -> usize {
+pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut [u8]) {
     data[line_start..line_start + bpp].copy_from_slice(&line[0..bpp]);
     let data_line = &mut data[line_start..];
     line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
         let left = data_line[i - bpp];
         data_line[i] = p.wrapping_add(left);
     });
-    line_start + line.len()
 }
 
-pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut [u8]) -> usize {
+pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut [u8]) {
     if line_start == 0 {
         decode_none(line, line_start, data)
     } else {
@@ -226,7 +226,6 @@ pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut
         line.iter().enumerate().for_each(|(i, p)| {
             data_line[i] = p.wrapping_add(previous[i]);
         });
-        line_start + line.len()
     }
 }
 
@@ -236,7 +235,7 @@ pub fn decode_average(
     line_start: usize,
     data: &mut [u8],
     previous: &mut [u8],
-) -> usize {
+) {
     if line_start == 0 {
         decode_sub(bpp, line, line_start, data)
     } else {
@@ -250,7 +249,6 @@ pub fn decode_average(
             let left = data_line[i - bpp] as u16;
             data_line[i] = p.wrapping_add(((up + left) / 2) as u8);
         });
-        line_start + line.len()
     }
 }
 
@@ -260,7 +258,7 @@ pub fn decode_paeth(
     line_start: usize,
     data: &mut [u8],
     previous: &mut [u8],
-) -> usize {
+) {
     if line_start == 0 {
         decode_sub(bpp, line, line_start, data)
     } else {
@@ -275,7 +273,6 @@ pub fn decode_paeth(
             let left = data_line[i - bpp];
             data_line[i] = p.wrapping_add(paeth_predictor(left, up, up_left));
         });
-        line_start + line.len()
     }
 }
 
