@@ -3,6 +3,7 @@ use nom::multi::many1;
 use nom::IResult;
 use std::convert::TryFrom;
 use std::error::Error;
+use std::time::Instant;
 
 // inner modules
 use crate::chunk::{self, Chunk, ChunkType};
@@ -38,13 +39,7 @@ const SIGNATURE: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 pub fn decode_no_check(input: &[u8]) -> Result<Png, Box<Error>> {
     match parse_chunks(input) {
         Ok((_, chunks)) => {
-            let ihdr_chunk = &chunks[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+            let (ihdr_data, inflated_idats) = ihdr_and_idats(&chunks)?;
             let scanlines = lines_slices(&inflated_idats, ihdr_data.scanline_width());
             let png_img = unfilter(&ihdr_data, scanlines);
             Ok(png_img)
@@ -57,13 +52,7 @@ pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
     match parse_chunks(data) {
         Ok((_, chunks)) => {
             let chunks_valid = chunk::validate_chunk_constraints(&chunks)?;
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            let ihdr_chunk = &chunks_valid[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+            let (ihdr_data, inflated_idats) = ihdr_and_idats(&chunks_valid)?;
             let scanlines = lines_slices(&inflated_idats, ihdr_data.scanline_width());
             println!("Inflate image data size: {}", inflated_idats.len());
             display_filters(&scanlines);
@@ -91,27 +80,14 @@ pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
 }
 
 pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
-    let mut now = std::time::Instant::now();
+    let mut now = Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
-            println!("parse_chunks: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let ihdr_chunk = &chunks[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            println!("parse_ihdr_data: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            println!("filter idats: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            println!("inflate idats: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
+            let (ihdr_data, inflated_idats) = ihdr_and_idats_timed(&chunks, &mut now)?;
+            now = Instant::now();
             let scanlines = lines_slices(&inflated_idats, ihdr_data.scanline_width());
             println!("get_scanlines: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
+            now = Instant::now();
             let png_img = unfilter(&ihdr_data, scanlines);
             println!("unfilter: {} us", now.elapsed().as_micros());
             Ok(png_img)
@@ -121,27 +97,14 @@ pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
 }
 
 pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
-    let mut now = std::time::Instant::now();
+    let mut now = Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
-            println!("parse_chunks: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let ihdr_chunk = &chunks[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            println!("parse_ihdr_data: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            println!("filter idats: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
-            let mut inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            println!("inflate idats: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
+            let (ihdr_data, mut inflated_idats) = ihdr_and_idats_timed(&chunks, &mut now)?;
+            now = Instant::now();
             let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
             println!("get_scanlines: {} us", now.elapsed().as_micros());
-            now = std::time::Instant::now();
+            now = Instant::now();
             let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
             println!("unfilter: {} us", now.elapsed().as_micros());
             Ok(png_img)
@@ -153,13 +116,7 @@ pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
 pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
     match parse_chunks(input) {
         Ok((_, chunks)) => {
-            let ihdr_chunk = &chunks[0];
-            let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            let idats: Vec<_> = chunks
-                .iter()
-                .filter(|c| c.chunk_type == ChunkType::IDAT)
-                .collect();
-            let mut inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+            let (ihdr_data, mut inflated_idats) = ihdr_and_idats(&chunks)?;
             let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
             let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
             Ok(png_img)
@@ -251,4 +208,39 @@ fn display_filters(scanlines: &[(Filter, &[u8])]) -> () {
         .enumerate()
         .for_each(|(i, (filter, _))| print!("{} {:?}, ", i, filter));
     println!("");
+}
+
+fn ihdr_and_idats(chunks: &[Chunk]) -> Result<(IHDRData, Vec<u8>), Box<Error>> {
+    let ihdr_chunk = &chunks[0];
+    let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+    let idats: Vec<_> = chunks
+        .iter()
+        .filter(|c| c.chunk_type == ChunkType::IDAT)
+        .collect();
+    let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+    Ok((ihdr_data, inflated_idats))
+}
+
+fn ihdr_and_idats_timed(
+    chunks: &[Chunk],
+    now: &mut Instant,
+) -> Result<(IHDRData, Vec<u8>), Box<Error>> {
+    println!("parse_chunks: {} us", now.elapsed().as_micros());
+    *now = Instant::now();
+
+    let ihdr_chunk = &chunks[0];
+    let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
+    println!("parse_ihdr_data: {} us", now.elapsed().as_micros());
+    *now = Instant::now();
+
+    let idats: Vec<_> = chunks
+        .iter()
+        .filter(|c| c.chunk_type == ChunkType::IDAT)
+        .collect();
+    println!("filter idats: {} us", now.elapsed().as_micros());
+    *now = Instant::now();
+
+    let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+    println!("inflate idats: {} us", now.elapsed().as_micros());
+    Ok((ihdr_data, inflated_idats))
 }
