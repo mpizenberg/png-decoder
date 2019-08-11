@@ -48,6 +48,18 @@ pub fn decode_no_check(input: &[u8]) -> Result<Png, Box<Error>> {
     }
 }
 
+pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
+    match parse_chunks(input) {
+        Ok((_, chunks)) => {
+            let (ihdr_data, mut inflated_idats) = ihdr_and_idats(&chunks)?;
+            let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
+            let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
+            Ok(png_img)
+        }
+        Err(e) => Err(format!("{:?}", e).into()),
+    }
+}
+
 pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
     match parse_chunks(data) {
         Ok((_, chunks)) => {
@@ -79,7 +91,7 @@ pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
+pub fn decode_no_check_timed(input: &[u8]) -> Result<Png, Box<Error>> {
     let mut now = Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
@@ -96,7 +108,18 @@ pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
     }
 }
 
-pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
+// Attempt at macro for timing.
+// Annoying because makes long lines that are multi-lined by rust fmt.
+// macro_rules! timed {
+//     ( $text:expr, $fn:ident, $( $x:expr ),* ) => {{
+//         let now = Instant::now();
+//         let x = $fn( $($x),* );
+//         println!($text, now.elapsed().as_micros());
+//         x
+//     }};
+// }
+
+pub fn decode_no_check_timed_bis(input: &[u8]) -> Result<Png, Box<Error>> {
     let mut now = Instant::now();
     match parse_chunks(input) {
         Ok((_, chunks)) => {
@@ -107,18 +130,6 @@ pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
             now = Instant::now();
             let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
             println!("unfilter: {} us", now.elapsed().as_micros());
-            Ok(png_img)
-        }
-        Err(e) => Err(format!("{:?}", e).into()),
-    }
-}
-
-pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
-    match parse_chunks(input) {
-        Ok((_, chunks)) => {
-            let (ihdr_data, mut inflated_idats) = ihdr_and_idats(&chunks)?;
-            let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
-            let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
             Ok(png_img)
         }
         Err(e) => Err(format!("{:?}", e).into()),
