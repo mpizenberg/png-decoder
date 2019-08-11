@@ -228,7 +228,8 @@ fn ihdr_and_idats(chunks: &[Chunk]) -> Result<(IHDRData, Vec<u8>), Box<Error>> {
         .iter()
         .filter(|c| c.chunk_type == ChunkType::IDAT)
         .collect();
-    let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+    let len = ihdr_data.height as usize * ihdr_data.scanline_width();
+    let inflated_idats = chunk_data::inflate_idats(&idats[..], len)?;
     Ok((ihdr_data, inflated_idats))
 }
 
@@ -251,7 +252,8 @@ fn ihdr_and_idats_timed(
     println!("filter idats: {} us", now.elapsed().as_micros());
     *now = Instant::now();
 
-    let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
+    let len = ihdr_data.height as usize * ihdr_data.scanline_width();
+    let inflated_idats = chunk_data::inflate_idats(&idats[..], len)?;
     println!("inflate idats: {} us", now.elapsed().as_micros());
     Ok((ihdr_data, inflated_idats))
 }

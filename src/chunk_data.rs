@@ -253,12 +253,11 @@ fn till_null(input: &[u8]) -> IResult<&[u8], &[u8]> {
     take_till(|c| c == 0)(input)
 }
 
-pub fn inflate_idats(idats: &[&Chunk]) -> Result<Vec<u8>, String> {
+pub fn inflate_idats(idats: &[&Chunk], len: usize) -> Result<Vec<u8>, String> {
     let flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     let mut decomp = inflate::core::DecompressorOxide::new();
     decomp.init();
-    let compressed_length: u32 = idats.iter().map(|c| c.length).sum();
-    let mut ret: Vec<u8> = vec![0; 2 * compressed_length as usize];
+    let mut ret: Vec<u8> = vec![0; len];
 
     let nb_chunk = idats.len();
     let mut out_pos = 0;
