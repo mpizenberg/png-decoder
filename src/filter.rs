@@ -43,8 +43,6 @@ pub fn unfilter(
 ) -> Vec<u8> {
     let mut data = vec![0; bpp * width * height];
     let mut prev = vec![0; bpp * width];
-    assert_eq!(height, scanlines.len());
-    assert_eq!(data.len(), bpp * width * height);
     let line_start = 0;
     scanlines
         .iter()
