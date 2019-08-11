@@ -33,7 +33,7 @@ pub fn decode_verbose(data: &[u8]) -> Result<(), Box<Error>> {
             let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
             let ihdr_chunk = &chunks_valid[0];
             let ihdr_data = chunk_data::parse_ihdr_data(ihdr_chunk.data).unwrap().1;
-            let scanlines = png::get_scanlines(&ihdr_data, &inflated_idats);
+            let scanlines = png::lines_slices(&inflated_idats, ihdr_data.scanline_width());
             println!("Inflate image data size: {}", inflated_idats.len());
             // println!("Scanlines:\n{:?}", scanlines);
             display_filters(&scanlines);

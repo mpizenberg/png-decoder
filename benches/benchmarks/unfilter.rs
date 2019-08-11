@@ -2,6 +2,7 @@ use super::common;
 use criterion::{black_box as bb, criterion_group, Criterion};
 use lazy_static::lazy_static;
 use png_decoder::filter::{self, Filter};
+use png_decoder::png;
 
 const BPP: usize = 3;
 const WIDTH: usize = 640;
@@ -77,13 +78,13 @@ fn unfilter_paeth(c: &mut Criterion) {
 
 fn unfilter_slice(data: &[u8]) {
     let data = data.to_vec();
-    let scanlines = common::lines_slices(&data, bb(SCANLINE_WIDTH));
+    let scanlines = png::lines_slices(&data, bb(SCANLINE_WIDTH));
     filter::unfilter(bb(WIDTH), bb(HEIGHT), bb(BPP), scanlines);
 }
 
 fn unfilter_mut(data: &[u8]) {
     let mut data = data.to_vec();
-    let scanlines = common::lines_num(&data, bb(SCANLINE_WIDTH));
+    let scanlines = png::lines_num(&data, bb(SCANLINE_WIDTH));
     filter::unfilter_bis(bb(WIDTH), bb(HEIGHT), bb(BPP), scanlines, &mut data);
 }
 

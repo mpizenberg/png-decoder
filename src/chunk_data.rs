@@ -113,6 +113,20 @@ pub struct LastModificationTime {
 
 // FUNCTIONS ###################################################################
 
+impl IHDRData {
+    pub fn scanline_width(&self) -> usize {
+        let nb_chanels = match self.color_type {
+            ColorType::Gray => 1,
+            ColorType::GrayAlpha => 2,
+            ColorType::RGB => 3,
+            ColorType::RGBA => 4,
+            ColorType::PLTE => panic!("Palette type not handled"),
+        };
+        let bytes_per_channel = std::cmp::max(1, self.bit_depth as u32 / 8);
+        (1 + self.width * nb_chanels * bytes_per_channel) as usize
+    }
+}
+
 pub fn parse_chunk_data<'a>(chunk: &'a Chunk<'a>) -> IResult<&'a [u8], ChunkData<'a>> {
     match chunk.chunk_type {
         // --- Critical chunks ---

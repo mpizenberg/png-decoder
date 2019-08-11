@@ -45,7 +45,7 @@ pub fn decode_no_check(input: &[u8]) -> Result<Png, Box<Error>> {
                 .filter(|c| c.chunk_type == ChunkType::IDAT)
                 .collect();
             let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            let scanlines = get_scanlines(&ihdr_data, &inflated_idats);
+            let scanlines = lines_slices(&inflated_idats, ihdr_data.scanline_width());
             let png_img = unfilter(&ihdr_data, scanlines);
             Ok(png_img)
         }
@@ -72,7 +72,7 @@ pub fn decode_no_check_verbose(input: &[u8]) -> Result<Png, Box<Error>> {
             let inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
             println!("inflate idats: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
-            let scanlines = get_scanlines(&ihdr_data, &inflated_idats);
+            let scanlines = lines_slices(&inflated_idats, ihdr_data.scanline_width());
             println!("get_scanlines: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let png_img = unfilter(&ihdr_data, scanlines);
@@ -102,7 +102,7 @@ pub fn decode_no_check_verbose_bis(input: &[u8]) -> Result<Png, Box<Error>> {
             let mut inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
             println!("inflate idats: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
-            let scanlines = get_scanlines_bis(&ihdr_data, &inflated_idats);
+            let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
             println!("get_scanlines: {} us", now.elapsed().as_micros());
             now = std::time::Instant::now();
             let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
@@ -123,7 +123,7 @@ pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
                 .filter(|c| c.chunk_type == ChunkType::IDAT)
                 .collect();
             let mut inflated_idats = chunk_data::inflate_idats(idats.as_slice())?;
-            let scanlines = get_scanlines_bis(&ihdr_data, &inflated_idats);
+            let scanlines = lines_num(&inflated_idats, ihdr_data.scanline_width());
             let png_img = unfilter_bis(&ihdr_data, scanlines, &mut inflated_idats);
             Ok(png_img)
         }
@@ -134,50 +134,6 @@ pub fn decode_no_check_bis(input: &[u8]) -> Result<Png, Box<Error>> {
 pub fn parse_chunks(input: &[u8]) -> IResult<&[u8], Vec<Chunk>> {
     let (input, _) = tag(SIGNATURE)(input)?;
     many1(Chunk::parse)(input)
-}
-
-pub fn get_scanlines<'a>(ihdr: &IHDRData, image_data: &'a [u8]) -> Vec<(Filter, &'a [u8])> {
-    let nb_chanels = match ihdr.color_type {
-        ColorType::Gray => 1,
-        ColorType::GrayAlpha => 2,
-        ColorType::RGB => 3,
-        ColorType::RGBA => 4,
-        ColorType::PLTE => panic!("Palette type not handled"),
-    };
-    let bytes_per_channel = std::cmp::max(1, ihdr.bit_depth as u32 / 8);
-    let full_line_length = (1 + ihdr.width * nb_chanels * bytes_per_channel) as usize;
-    assert_eq!(image_data.len(), ihdr.height as usize * full_line_length);
-    let lines_starts = (0..ihdr.height as usize).map(|l| l * full_line_length);
-    lines_starts
-        .map(|start| {
-            (
-                Filter::try_from(image_data[start]).expect("Incorrect filter type"),
-                &image_data[(start + 1)..(start + full_line_length)],
-            )
-        })
-        .collect()
-}
-
-pub fn get_scanlines_bis(ihdr: &IHDRData, image_data: &[u8]) -> Vec<(Filter, usize)> {
-    let nb_chanels = match ihdr.color_type {
-        ColorType::Gray => 1,
-        ColorType::GrayAlpha => 2,
-        ColorType::RGB => 3,
-        ColorType::RGBA => 4,
-        ColorType::PLTE => panic!("Palette type not handled"),
-    };
-    let bytes_per_channel = std::cmp::max(1, ihdr.bit_depth as u32 / 8);
-    let full_line_length = (1 + ihdr.width * nb_chanels * bytes_per_channel) as usize;
-    assert_eq!(image_data.len(), ihdr.height as usize * full_line_length);
-    let lines_starts = (0..ihdr.height as usize).map(|l| l * full_line_length);
-    lines_starts
-        .map(|start| {
-            (
-                Filter::try_from(image_data[start]).expect("Incorrect filter type"),
-                start + 1,
-            )
-        })
-        .collect()
 }
 
 pub fn unfilter(ihdr: &IHDRData, scanlines: Vec<(Filter, &[u8])>) -> Png {
@@ -223,4 +179,32 @@ pub fn unfilter_bis(ihdr: &IHDRData, scanlines: Vec<(Filter, usize)>, inflated: 
         bytes_per_pixel: bpp,
         data,
     }
+}
+
+// Helpers #####################################################################
+
+pub fn lines_slices(data: &[u8], scanline_width: usize) -> Vec<(Filter, &[u8])> {
+    let nb_scanlines = data.len() / scanline_width;
+    (0..nb_scanlines)
+        .map(|i| i * scanline_width)
+        .map(|start| {
+            (
+                Filter::try_from(data[start]).expect("Incorrect filter type"),
+                &data[start + 1..start + scanline_width],
+            )
+        })
+        .collect()
+}
+
+pub fn lines_num(data: &[u8], scanline_width: usize) -> Vec<(Filter, usize)> {
+    let nb_scanlines = data.len() / scanline_width;
+    (0..nb_scanlines)
+        .map(|i| i * scanline_width)
+        .map(|start| {
+            (
+                Filter::try_from(data[start]).expect("Incorrect filter type"),
+                start + 1,
+            )
+        })
+        .collect()
 }
