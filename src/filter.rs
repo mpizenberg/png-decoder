@@ -209,7 +209,7 @@ pub fn decode_paeth_bis(
 
 #[inline]
 pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut [u8]) {
-    let data_line = &mut data[line_start..];
+    let data_line = &mut data[line_start..line_start + line.len()];
     data_line[..bpp].copy_from_slice(&line[..bpp]);
     for i in bpp..line.len() {
         data_line[i] = line[i].wrapping_add(data_line[i - bpp]);
@@ -222,9 +222,12 @@ pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut
     } else {
         previous.copy_from_slice(&data[line_start - line.len()..line_start]);
         let data_line = &mut data[line_start..line_start + line.len()];
-        line.iter().enumerate().for_each(|(i, p)| {
-            data_line[i] = p.wrapping_add(previous[i]);
-        });
+        line.iter()
+            .zip(data_line.iter_mut())
+            .zip(previous.iter())
+            .for_each(|((l, d), p)| {
+                *d = l.wrapping_add(*p);
+            });
     }
 }
 
@@ -248,6 +251,14 @@ pub fn decode_average(
             let left = data_line[i - bpp] as u16;
             data_line[i] = p.wrapping_add(((up + left) / 2) as u8);
         });
+        // for i in bpp..line.len() {
+        //     unsafe {
+        //         let current = *line.get_unchecked(i);
+        //         let up = *previous.get_unchecked(i) as u16;
+        //         let left = *data_line.get_unchecked(i - bpp) as u16;
+        //         *data_line.get_unchecked_mut(i) = current.wrapping_add(((up + left) / 2) as u8);
+        //     }
+        // }
     }
 }
 
