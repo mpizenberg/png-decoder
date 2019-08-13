@@ -49,7 +49,7 @@ pub fn unfilter(
         match filter {
             Filter::None => decode_none(line, line_start, &mut data),
             Filter::Sub => decode_sub(bpp, line, line_start, &mut data),
-            Filter::Up => decode_up(line, line_start, &mut data, &mut prev),
+            Filter::Up => decode_up(line, line_start, &mut data),
             Filter::Average => decode_average(bpp, line, line_start, &mut data, &mut prev),
             Filter::Paeth => decode_paeth(bpp, line, line_start, &mut data, &mut prev),
         };
@@ -216,15 +216,15 @@ pub fn decode_sub(bpp: usize, line: &[u8], line_start: usize, data: &mut [u8]) {
     }
 }
 
-pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8], previous: &mut [u8]) {
+pub fn decode_up(line: &[u8], line_start: usize, data: &mut [u8]) {
     if line_start == 0 {
         decode_none(line, line_start, data)
     } else {
-        previous.copy_from_slice(&data[line_start - line.len()..line_start]);
-        let data_line = &mut data[line_start..line_start + line.len()];
+        let (before, data_line) = data.split_at_mut(line_start);
+        let prev = &before[line_start - line.len()..];
         line.iter()
             .zip(data_line.iter_mut())
-            .zip(previous.iter())
+            .zip(prev.iter())
             .for_each(|((l, d), p)| {
                 *d = l.wrapping_add(*p);
             });
