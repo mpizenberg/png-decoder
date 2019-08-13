@@ -274,9 +274,15 @@ pub fn decode_paeth(
     } else {
         previous.copy_from_slice(&data[line_start - line.len()..line_start]);
         let data_line = &mut data[line_start..line_start + line.len()];
-        line.iter().take(bpp).enumerate().for_each(|(i, p)| {
-            data_line[i] = p.wrapping_add(previous[i]);
-        });
+
+        line.iter()
+            .take(bpp)
+            .zip(data_line.iter_mut())
+            .zip(previous.iter())
+            .for_each(|((l, d), p)| {
+                *d = l.wrapping_add(*p);
+            });
+
         line.iter().enumerate().skip(bpp).for_each(|(i, p)| {
             let up_left = previous[i - bpp];
             let up = previous[i];
